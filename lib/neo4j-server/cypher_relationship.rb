@@ -34,7 +34,7 @@ module Neo4j
       def load_resource
         return if resource_data_present?
 
-        @resource_data = @session._query_or_fail("#{match_start} RETURN n", true, neo_id: neo_id) # r.first_data
+        @resource_data = @session._query_or_fail("#{match_start} RETURN n", true, match_params) # r.first_data
       end
 
       attr_reader :start_node_neo_id
@@ -64,15 +64,17 @@ module Neo4j
       end
 
       def get_property(key)
-        @session._query_or_fail("#{match_start} RETURN n.`#{key}`", true, neo_id: neo_id)
+        @session._query_or_fail("#{match_start} RETURN n.`#{key}`", true, match_params)
       end
 
       def set_property(key, value)
-        @session._query_or_fail("#{match_start} SET n.`#{key}` = {value}", false,  value: value, neo_id: neo_id)
+        params = match_params
+        params[:value] = value
+        @session._query_or_fail("#{match_start} SET n.`#{key}` = {value}", false, params)
       end
 
       def remove_property(key)
-        @session._query_or_fail("#{match_start} REMOVE n.`#{key}`", false, neo_id: neo_id)
+        @session._query_or_fail("#{match_start} REMOVE n.`#{key}`", false, match_params)
       end
 
       # (see Neo4j::Relationship#props)
@@ -80,14 +82,16 @@ module Neo4j
         if @props
           @props
         else
-          hash = @session._query_entity_data("#{match_start} RETURN n", nil, neo_id: neo_id)
+          hash = @session._query_entity_data("#{match_start} RETURN n", nil, match_params)
           @props = Hash[hash[:data].map { |k, v| [k, v] }]
         end
       end
 
       # (see Neo4j::Relationship#props=)
       def props=(properties)
-        @session._query_or_fail("#{match_start} SET n = { props }", false, props: properties, neo_id: neo_id)
+        params = match_params
+        params[:props] = properties
+        @session._query_or_fail("#{match_start} SET n = { props }", false, params)
         properties
       end
 
@@ -103,7 +107,8 @@ module Neo4j
           "n.`#{k}`= {#{param}}"
         end.join(',')
 
-        @session._query_or_fail(q, false, params.merge(neo_id: neo_id))
+        params.update! match_params
+        @session._query_or_fail(q, false, params)
 
         properties
       end
@@ -127,7 +132,11 @@ module Neo4j
       private
 
       def match_start(identifier = 'n')
-        "MATCH (node)-[#{identifier}]-() WHERE ID(#{identifier}) = {neo_id}"
+        "MATCH (node)-[#{identifier}]-() WHERE (ID(#{identifier}) = {neo_id}) AND (ID(node) = {start_node_neo_id})"
+      end
+
+      def match_params
+        {neo_id: neo_id, start_node_neo_id: start_node_neo_id}
       end
 
       def resource_data_present?
